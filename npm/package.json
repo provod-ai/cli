@@ -1,0 +1,42 @@
+{
+  "name": "@provod-ai/cli",
+  "version": "0.1.0",
+  "description": "Secure npm installer and launcher for the native Provod CLI",
+  "license": "MIT",
+  "homepage": "https://provod.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/provod-ai/cli.git"
+  },
+  "bugs": "https://github.com/provod-ai/cli/issues",
+  "bin": {
+    "provod": "bin/provod.js"
+  },
+  "files": [
+    "bin/provod.js",
+    "lib/installer.cjs",
+    "scripts/postinstall.cjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/postinstall.cjs",
+    "test": "node --test test/*.node.cjs",
+    "pack:check": "node --test test/package.node.cjs"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

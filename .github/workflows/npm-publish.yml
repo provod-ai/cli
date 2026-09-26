@@ -1,0 +1,152 @@
+name: Publish npm wrapper
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published GitHub Release tag (vX.Y.Z)
+        required: true
+        type: string
+
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-pack:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.21.0
+      - name: Verify immutable release and package identity
+        id: identity
+        shell: bash
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="${EVENT_TAG:-${INPUT_TAG:-}}"
+          VERSION="$(node -p "require('./npm/package.json').version")"
+          test "$TAG" = "v${VERSION}"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main "+refs/tags/${TAG}:refs/tags/${TAG}"
+          TAG_SHA="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
+          test "$GITHUB_SHA" = "$TAG_SHA"
+          test "$TAG_SHA" = "$MAIN_SHA"
+
+          RELEASE_URL="https://api.github.com/repos/provod-ai/cli/releases/tags/${TAG}"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --max-time 30 --output "$RUNNER_TEMP/release.json" "$RELEASE_URL"
+          jq -e --arg tag "$TAG" --arg target "$MAIN_SHA" '
+            .tag_name == $tag and
+            .draft == false and
+            .prerelease == false and
+            .target_commitish == $target
+          ' "$RUNNER_TEMP/release.json" >/dev/null
+
+          mkdir "$RUNNER_TEMP/release-assets"
+          jq -r '.assets[] | [.name, .browser_download_url] | @tsv' "$RUNNER_TEMP/release.json" |
+          while IFS=$'\t' read -r name url; do
+            case "$name" in
+              SHA256SUMS|provod-v"${VERSION}"-darwin-arm64.tar.gz|provod-v"${VERSION}"-darwin-x64.tar.gz|provod-v"${VERSION}"-linux-arm64.tar.gz|provod-v"${VERSION}"-linux-x64.tar.gz|provod-v"${VERSION}"-darwin-arm64.tar.gz.sigstore.json|provod-v"${VERSION}"-darwin-x64.tar.gz.sigstore.json|provod-v"${VERSION}"-linux-arm64.tar.gz.sigstore.json|provod-v"${VERSION}"-linux-x64.tar.gz.sigstore.json) ;;
+              *) echo "Unexpected release asset: $name" >&2; exit 1 ;;
+            esac
+            curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+              --max-time 120 --output "$RUNNER_TEMP/release-assets/$name" "$url"
+          done
+          test "$(find "$RUNNER_TEMP/release-assets" -type f | wc -l | tr -d ' ')" = 9
+          node - "$VERSION" "$RUNNER_TEMP/release-assets/SHA256SUMS" <<'NODE'
+          const { readFileSync } = require('node:fs');
+          const [version, path] = process.argv.slice(2);
+          const expected = new Set([
+            `provod-v${version}-darwin-arm64.tar.gz`,
+            `provod-v${version}-darwin-x64.tar.gz`,
+            `provod-v${version}-linux-arm64.tar.gz`,
+            `provod-v${version}-linux-x64.tar.gz`,
+          ]);
+          const lines = readFileSync(path, 'utf8').split('\n');
+          if (lines.at(-1) !== '') throw new Error('SHA256SUMS must end with a newline');
+          lines.pop();
+          const actual = lines.map((line) => {
+            const match = /^([0-9a-f]{64}) {2}([^\r\n]+)$/.exec(line);
+            if (!match) throw new Error('SHA256SUMS contains a malformed line');
+            return match[2];
+          });
+          if (actual.length !== expected.size || new Set(actual).size !== expected.size || actual.some((name) => !expected.has(name))) {
+            throw new Error('SHA256SUMS must contain exactly the four native archives');
+          }
+          NODE
+          (cd "$RUNNER_TEMP/release-assets" && sha256sum --check --strict SHA256SUMS)
+          printf 'tag=%s\nversion=%s\n' "$TAG" "$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Test and pack the public wrapper
+        id: pack
+        shell: bash
+        env:
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          npm --prefix npm test
+          mkdir "$RUNNER_TEMP/npm-package"
+          TARBALL="$(cd npm && npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/npm-package")"
+          test "$TARBALL" = "provod-ai-cli-${VERSION}.tgz"
+          sha256sum "$RUNNER_TEMP/npm-package/$TARBALL" > "$RUNNER_TEMP/npm-package/$TARBALL.sha256"
+          printf 'tarball=%s\n' "$TARBALL" >> "$GITHUB_OUTPUT"
+      - name: Upload the exact package artifact
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: npm-package-${{ github.sha }}
+          path: ${{ runner.temp }}/npm-package/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: verify-and-pack
+    runs-on: ubuntu-24.04
+    environment: npm-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download the verified package artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: npm-package-${{ github.sha }}
+          path: npm-package
+          digest-mismatch: error
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.21.0
+          registry-url: https://registry.npmjs.org
+      - name: Verify and publish through npm Trusted Publishing
+        shell: bash
+        env:
+          EXPECTED_ARTIFACT_DIGEST: ${{ needs.verify-and-pack.outputs.artifact-digest }}
+          EXPECTED_TARBALL: ${{ needs.verify-and-pack.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_ARTIFACT_DIGEST" =~ ^[a-f0-9]{64}$ ]]
+          test "$(find npm-package -maxdepth 1 -type f | wc -l | tr -d ' ')" = 2
+          TARBALL="npm-package/$EXPECTED_TARBALL"
+          test -f "$TARBALL"
+          (cd npm-package && sha256sum --check --strict "$EXPECTED_TARBALL.sha256")
+          test "$(node --version)" = "v24.21.0"
+          node -e 'const [major, minor, patch] = process.argv[1].split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) throw new Error("npm 11.5.1 or newer is required")' "$(npm --version)"
+          npm publish "$TARBALL" --provenance --access public
