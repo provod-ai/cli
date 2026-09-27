@@ -3,15 +3,9 @@ name: Publish npm wrapper
 on:
   release:
     types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing published GitHub Release tag (vX.Y.Z)
-        required: true
-        type: string
 
 concurrency:
-  group: npm-publish-${{ github.event.release.tag_name || inputs.tag }}
+  group: npm-publish-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 permissions:
@@ -19,6 +13,7 @@ permissions:
 
 jobs:
   verify-and-pack:
+    if: github.repository == 'provod-ai/cli' && github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -44,10 +39,9 @@ jobs:
         shell: bash
         env:
           EVENT_TAG: ${{ github.event.release.tag_name }}
-          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${EVENT_TAG:-${INPUT_TAG:-}}"
+          TAG="${EVENT_TAG:-}"
           [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           VERSION="$(node -p "require('./npm/package.json').version")"
           test "$TAG" = "v${VERSION}"
@@ -56,23 +50,11 @@ jobs:
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main "refs/tags/${TAG}:refs/tags/${TAG}"
           TAG_SHA="$(git rev-parse "refs/tags/${TAG}^{commit}")"
           MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
-          case "$GITHUB_EVENT_NAME" in
-            release)
-              # Automatic releases still require the exact tag/main event commit.
-              test "$GITHUB_REF" = "refs/tags/$TAG"
-              test "$GITHUB_SHA" = "$TAG_SHA"
-              test "$TAG_SHA" = "$MAIN_SHA"
-              ;;
-            workflow_dispatch)
-              # Recovery runs reviewed main code, never a moving checkout of main.
-              test "$GITHUB_REF" = refs/heads/main
-              test "$GITHUB_SHA" = "$MAIN_SHA"
-              git merge-base --is-ancestor "$TAG_SHA" "$GITHUB_SHA"
-              # Include ALL npm inputs (manifest, code, docs, scripts and tests).
-              test "$(git rev-parse "$GITHUB_SHA:npm")" = "$(git rev-parse "$TAG_SHA:npm")"
-              ;;
-            *) echo 'Unsupported publication event' >&2; exit 1 ;;
-          esac
+          # OIDC provenance must carry the exact immutable release tag identity.
+          test "$GITHUB_EVENT_NAME" = release
+          test "$GITHUB_REF" = "refs/tags/$TAG"
+          test "$GITHUB_SHA" = "$TAG_SHA"
+          test "$TAG_SHA" = "$MAIN_SHA"
 
           RELEASE_URL="https://api.github.com/repos/provod-ai/cli/releases/tags/${TAG}"
           curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
@@ -148,6 +130,7 @@ jobs:
           retention-days: 1
 
   publish:
+    if: github.repository == 'provod-ai/cli' && github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
     needs: verify-and-pack
     runs-on: ubuntu-24.04
     environment: npm-release

@@ -31,7 +31,7 @@ The CLI application ships as a standalone native executable. The direct installe
 
 ### npm
 
-Requires Node.js 18.18 or newer and npm. **Release transition:** published npm `0.1.0` still requires Cosign; the no-Cosign installer described here is pending a new npm/native release. Immutable `0.1.0` will not be republished. To install without Cosign now, use the direct installer once this change reaches `main`. The package version maps exactly to GitHub Release `v<version>`; installation downloads, verifies, and stores the matching native executable inside the package.
+Requires Node.js 18.18 or newer and npm. **Release transition:** npm `0.1.1` installation needs no Cosign, but its embedded updater still requires it. The no-Cosign self-update described below requires a new native/npm release; immutable versions will not be republished. The package version maps exactly to GitHub Release `v<version>`; installation downloads, verifies, and stores the matching native executable inside the package.
 
 ```bash
 npm install -g @provod-ai/cli
@@ -204,9 +204,21 @@ This repository is a binary-only distribution channel with independent Git histo
 
 ## Updating
 
-Run the same platform install command again. It resolves the latest release, verifies its checksum, and replaces the executable atomically.
+The next release supports self-update without Cosign or extra setup:
 
-The preview does not expose a separate `update` command.
+```bash
+provod update --yes
+# Optional exact stable version:
+provod update --release X.Y.Z --yes
+```
+
+`X.Y.Z` is a placeholder for a published stable version. Standalone updates always check SHA-256; global npm updates also check registry SHA-512 and replace the complete wrapper plus executable. HTTPS origin restrictions, strict archive validation, staged version checks, and crash-recoverable replacement remain mandatory. Project-local npm installations must use `npm install @provod-ai/cli@X.Y.Z` to maintain their lockfiles.
+
+Optional strict mode is `PROVOD_VERIFY_SIGNATURE=1 provod update --yes`. It requires independently installed trusted Cosign and exact native **and npm** workflow/tag provenance. Missing Cosign, missing bundles, wrong identities or invalid signatures abort without checksum-only fallback. Only `0` (default) and `1` are accepted. Default mode trusts HTTPS and the GitHub/npm accounts; checksums are not independent proof of publisher authenticity.
+
+**Migration from 0.1.1:** the published executable still has its old mandatory-Cosign updater; changing this repository cannot retrofit that executable. Once a new fixed release exists, rerun the direct platform installer or `npm install -g @provod-ai/cli@X.Y.Z` once to replace it. Do not expect `PROVOD_VERIFY_SIGNATURE=0` to fix the old updater. npm `0.1.1` was published from a main-ref workflow, so strict tag-pinned npm verification correctly rejects it; neither its provenance nor its immutable package can be rewritten.
+
+**Publication policy:** future npm releases publish only on `release: published` with the exact `refs/tags/v<version>` event identity, immutable event SHA equal to the tag and current public main, and matching GitHub release target. Manual main-ref recovery publication is prohibited even if npm inputs match. Rerun an unchanged failed tag-event run only for a transient failure; workflow/package fixes require a new reviewed version and immutable tag. No existing tags or npm versions are moved or republished.
 
 ## Uninstall
 
