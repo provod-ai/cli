@@ -34,6 +34,11 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24.21.0
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: 'v2.6.1'
+          install-dir: ${{ runner.temp }}/cosign-${{ github.run_id }}-${{ github.run_attempt }}
+          use-sudo: 'false'
       - name: Verify immutable release and package identity
         id: identity
         shell: bash
@@ -43,18 +48,36 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${EVENT_TAG:-${INPUT_TAG:-}}"
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           VERSION="$(node -p "require('./npm/package.json').version")"
           test "$TAG" = "v${VERSION}"
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main "+refs/tags/${TAG}:refs/tags/${TAG}"
+          test "$GITHUB_REPOSITORY" = provod-ai/cli
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main "refs/tags/${TAG}:refs/tags/${TAG}"
           TAG_SHA="$(git rev-parse "refs/tags/${TAG}^{commit}")"
           MAIN_SHA="$(git rev-parse refs/remotes/origin/main)"
-          test "$GITHUB_SHA" = "$TAG_SHA"
-          test "$TAG_SHA" = "$MAIN_SHA"
+          case "$GITHUB_EVENT_NAME" in
+            release)
+              # Automatic releases still require the exact tag/main event commit.
+              test "$GITHUB_REF" = "refs/tags/$TAG"
+              test "$GITHUB_SHA" = "$TAG_SHA"
+              test "$TAG_SHA" = "$MAIN_SHA"
+              ;;
+            workflow_dispatch)
+              # Recovery runs reviewed main code, never a moving checkout of main.
+              test "$GITHUB_REF" = refs/heads/main
+              test "$GITHUB_SHA" = "$MAIN_SHA"
+              git merge-base --is-ancestor "$TAG_SHA" "$GITHUB_SHA"
+              # Include ALL npm inputs (manifest, code, docs, scripts and tests).
+              test "$(git rev-parse "$GITHUB_SHA:npm")" = "$(git rev-parse "$TAG_SHA:npm")"
+              ;;
+            *) echo 'Unsupported publication event' >&2; exit 1 ;;
+          esac
 
           RELEASE_URL="https://api.github.com/repos/provod-ai/cli/releases/tags/${TAG}"
           curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
             --max-time 30 --output "$RUNNER_TEMP/release.json" "$RELEASE_URL"
-          jq -e --arg tag "$TAG" --arg target "$MAIN_SHA" '
+          jq -e --arg tag "$TAG" --arg target "$TAG_SHA" '
             .tag_name == $tag and
             .draft == false and
             .prerelease == false and
@@ -94,6 +117,13 @@ jobs:
           }
           NODE
           (cd "$RUNNER_TEMP/release-assets" && sha256sum --check --strict SHA256SUMS)
+          for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+            archive="$RUNNER_TEMP/release-assets/provod-v${VERSION}-${target}.tar.gz"
+            cosign verify-blob-attestation --new-bundle-format=true --type slsaprovenance1 \
+              --bundle "$archive.sigstore.json" \
+              --certificate-identity "https://github.com/provod-ai/cli-source/.github/workflows/native-release.yml@refs/tags/v${VERSION}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com "$archive"
+          done
           printf 'tag=%s\nversion=%s\n' "$TAG" "$VERSION" >> "$GITHUB_OUTPUT"
       - name: Test and pack the public wrapper
         id: pack
@@ -106,7 +136,7 @@ jobs:
           mkdir "$RUNNER_TEMP/npm-package"
           TARBALL="$(cd npm && npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/npm-package")"
           test "$TARBALL" = "provod-ai-cli-${VERSION}.tgz"
-          sha256sum "$RUNNER_TEMP/npm-package/$TARBALL" > "$RUNNER_TEMP/npm-package/$TARBALL.sha256"
+          (cd "$RUNNER_TEMP/npm-package" && sha256sum "$TARBALL" > "$TARBALL.sha256")
           printf 'tarball=%s\n' "$TARBALL" >> "$GITHUB_OUTPUT"
       - name: Upload the exact package artifact
         id: upload
