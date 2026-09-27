@@ -174,7 +174,7 @@ jobs:
           set -euo pipefail
           [[ "$EXPECTED_ARTIFACT_DIGEST" =~ ^[a-f0-9]{64}$ ]]
           test "$(find npm-package -maxdepth 1 -type f | wc -l | tr -d ' ')" = 2
-          TARBALL="npm-package/$EXPECTED_TARBALL"
+          TARBALL="./npm-package/$EXPECTED_TARBALL"
           test -f "$TARBALL"
           (cd npm-package && sha256sum --check --strict "$EXPECTED_TARBALL.sha256")
           test "$(node --version)" = "v24.21.0"
