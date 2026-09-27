@@ -134,6 +134,7 @@ function extractTarGz(archive, expectedName) {
   let offset = 0;
   let executable;
   let terminated = false;
+  let timestampSeen = false;
   while (offset + 512 <= tar.length) {
     const header = tar.subarray(offset, offset + 512);
     if (header.every((byte) => byte === 0)) {
@@ -157,6 +158,19 @@ function extractTarGz(archive, expectedName) {
     const sizeText = header.subarray(124, 136).toString('ascii').replace(/\0.*$/, '').trim();
     if (!/^[0-7]+$/.test(sizeText)) throw new Error('Archive has an invalid member size');
     const size = Number.parseInt(sizeText, 8);
+    // The published archives have one local PAX mtime record. Ignore only that
+    // timestamp, never path/linkpath/size overrides or arbitrary PAX metadata.
+    if (type === 'x') {
+      const record = tar.subarray(offset + 512, offset + 512 + size);
+      const match = /^([1-9][0-9]*) mtime=[0-9]+(?:\.[0-9]+)?\n$/.exec(record.toString('utf8'));
+      if (name !== '././@PaxHeader' || linkName || prefix || timestampSeen || executable ||
+          size > 128 || record.length !== size || !match || match[0].length !== size || Number(match[1]) !== size) {
+        throw new Error('Archive contains unsafe PAX metadata');
+      }
+      timestampSeen = true;
+      offset += 512 + Math.ceil(size / 512) * 512;
+      continue;
+    }
     if (name !== expectedName || linkName || prefix || (type !== '0' && type !== '\0') || executable) {
       throw new Error('Archive contains an unexpected or unsafe member');
     }
@@ -235,6 +249,8 @@ function extractZip(archive, expectedName) {
 
 async function install(options) {
   const { version, platform, arch, packageRoot, baseUrl, beforeCommit } = options;
+  const signaturePolicy = process.env.PROVOD_VERIFY_SIGNATURE ?? '0';
+  if (!['0', '1'].includes(signaturePolicy)) throw new Error('PROVOD_VERIFY_SIGNATURE must be 0 or 1');
   const target = resolveTarget(platform, arch, version);
   const releaseUrl = `${baseUrl.replace(/\/$/, '')}/v${version}`;
   const [archive, sums] = await Promise.all([
@@ -244,18 +260,20 @@ async function install(options) {
   const expected = expectedChecksum(sums.toString('utf8'), target.asset);
   const actual = createHash('sha256').update(archive).digest('hex');
   if (!timingSafeEqual(Buffer.from(actual), Buffer.from(expected))) throw new Error('Release checksum mismatch');
-  const bundle = await download(`${releaseUrl}/${target.asset}.sigstore.json`, { ...options, maxBytes: 1024 * 1024 });
-  const verification = await mkdtemp(join(tmpdir(), 'provod-provenance-'));
-  try {
-    const archiveFile = join(verification, target.asset);
-    const bundleFile = `${archiveFile}.sigstore.json`;
-    await writeFile(archiveFile, archive, { mode: 0o600, flag: 'wx' });
-    await writeFile(bundleFile, bundle, { mode: 0o600, flag: 'wx' });
-    await execute('cosign', ['verify-blob-attestation', '--new-bundle-format=true', '--type', 'slsaprovenance1',
-      '--bundle', bundleFile, '--certificate-identity', `https://github.com/provod-ai/cli-source/.github/workflows/native-release.yml@refs/tags/v${version}`,
-      '--certificate-oidc-issuer', 'https://token.actions.githubusercontent.com', archiveFile], { timeout: 120000, maxBuffer: 1024 * 1024, shell: false });
-  } catch { throw new Error('Release provenance verification failed; install a trusted Cosign locally'); }
-  finally { await rm(verification, { recursive: true, force: true }); }
+  if (signaturePolicy === '1') {
+    const bundle = await download(`${releaseUrl}/${target.asset}.sigstore.json`, { ...options, maxBytes: 1024 * 1024 });
+    const verification = await mkdtemp(join(tmpdir(), 'provod-provenance-'));
+    try {
+      const archiveFile = join(verification, target.asset);
+      const bundleFile = `${archiveFile}.sigstore.json`;
+      await writeFile(archiveFile, archive, { mode: 0o600, flag: 'wx' });
+      await writeFile(bundleFile, bundle, { mode: 0o600, flag: 'wx' });
+      await execute('cosign', ['verify-blob-attestation', '--new-bundle-format=true', '--type', 'slsaprovenance1',
+        '--bundle', bundleFile, '--certificate-identity', `https://github.com/provod-ai/cli-source/.github/workflows/native-release.yml@refs/tags/v${version}`,
+        '--certificate-oidc-issuer', 'https://token.actions.githubusercontent.com', archiveFile], { timeout: 120000, maxBuffer: 1024 * 1024, shell: false });
+    } catch { throw new Error('Release provenance verification failed; install a trusted Cosign locally'); }
+    finally { await rm(verification, { recursive: true, force: true }); }
+  }
   const executable = target.asset.endsWith('.tar.gz')
     ? extractTarGz(archive, target.executable)
     : extractZip(archive, target.executable);

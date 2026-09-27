@@ -132,7 +132,50 @@ test('accepts strict SemVer and rejects ambiguous versions', () => {
   }
 });
 
+test('invalid signature policy fails before network access', async (context) => {
+  const original = process.env.PROVOD_VERIFY_SIGNATURE;
+  process.env.PROVOD_VERIFY_SIGNATURE = 'true';
+  context.after(() => { if (original === undefined) delete process.env.PROVOD_VERIFY_SIGNATURE; else process.env.PROVOD_VERIFY_SIGNATURE = original; });
+  await assert.rejects(install({ version: '1.2.3', platform: 'linux', arch: 'x64',
+    packageRoot: '/unused', baseUrl: 'https://unused.invalid' }), /PROVOD_VERIFY_SIGNATURE/);
+});
+
+test('default installation needs no Cosign or provenance download', async (context) => {
+  const originalPolicy = process.env.PROVOD_VERIFY_SIGNATURE;
+  delete process.env.PROVOD_VERIFY_SIGNATURE;
+  context.after(() => { if (originalPolicy === undefined) delete process.env.PROVOD_VERIFY_SIGNATURE; else process.env.PROVOD_VERIFY_SIGNATURE = originalPolicy; });
+  const packageRoot = await mkdtemp(join(tmpdir(), 'provod-npm-'));
+  context.after(() => rm(packageRoot, { recursive: true, force: true }));
+  const original = process.env.PATH;
+  process.env.PATH = packageRoot;
+  context.after(() => { process.env.PATH = original; });
+  const binary = Buffer.from('native executable');
+  const archive = tarArchive('provod', binary);
+  const asset = 'provod-v1.2.3-linux-x64.tar.gz';
+  const server = await releaseServer({
+    [`/v1.2.3/${asset}`]: { body: archive },
+    '/v1.2.3/SHA256SUMS': { body: checksumManifest(asset, createHash('sha256').update(archive).digest('hex')) },
+  });
+  context.after(server.close);
+  const installed = await install({ version: '1.2.3', platform: 'linux', arch: 'x64', packageRoot,
+    baseUrl: server.baseUrl, allowInsecureTestUrl: true });
+  assert.deepEqual(await readFile(installed), binary);
+  const signedServer = await releaseServer({
+    [`/v1.2.3/${asset}`]: { body: archive },
+    '/v1.2.3/SHA256SUMS': { body: checksumManifest(asset, createHash('sha256').update(archive).digest('hex')) },
+    [`/v1.2.3/${asset}.sigstore.json`]: { body: '{}' },
+  });
+  context.after(signedServer.close);
+  process.env.PROVOD_VERIFY_SIGNATURE = '1';
+  await assert.rejects(install({ version: '1.2.3', platform: 'linux', arch: 'x64', packageRoot,
+    baseUrl: signedServer.baseUrl, allowInsecureTestUrl: true }), /provenance verification failed/);
+  assert.deepEqual(await readFile(installed), binary);
+});
+
 test('downloads, verifies, and atomically installs the matching native archive', async (context) => {
+  const originalPolicy = process.env.PROVOD_VERIFY_SIGNATURE;
+  process.env.PROVOD_VERIFY_SIGNATURE = '1';
+  context.after(() => { if (originalPolicy === undefined) delete process.env.PROVOD_VERIFY_SIGNATURE; else process.env.PROVOD_VERIFY_SIGNATURE = originalPolicy; });
   const packageRoot = await mkdtemp(join(tmpdir(), 'provod-npm-'));
   context.after(() => rm(packageRoot, { recursive: true, force: true }));
   const binary = Buffer.from('#!/bin/sh\nprintf installed');
@@ -161,6 +204,9 @@ test('downloads, verifies, and atomically installs the matching native archive',
 });
 
 test('refuses checksum-valid archives without signed provenance', async (context) => {
+  const originalPolicy = process.env.PROVOD_VERIFY_SIGNATURE;
+  process.env.PROVOD_VERIFY_SIGNATURE = '1';
+  context.after(() => { if (originalPolicy === undefined) delete process.env.PROVOD_VERIFY_SIGNATURE; else process.env.PROVOD_VERIFY_SIGNATURE = originalPolicy; });
   const packageRoot = await mkdtemp(join(tmpdir(), 'provod-npm-'));
   context.after(() => rm(packageRoot, { recursive: true, force: true }));
   const archive = tarArchive('provod', Buffer.from('untrusted'));
@@ -186,6 +232,19 @@ test('Windows installation fails before network access or filesystem writes', as
   }
   assert.equal(requests, 0);
   assert.deepEqual(await readdir(packageRoot), []);
+});
+
+test('accepts only the release timestamp PAX header before the executable', () => {
+  const binary = Buffer.from('binary');
+  const regular = gunzipSync(tarArchive('provod', binary));
+  const pax = (record) => gunzipSync(tarArchive('././@PaxHeader', Buffer.from(record), 'x')).subarray(0, 1024);
+  const timestamp = pax('27 mtime=1790404358.658333\n');
+  assert.deepEqual(extractTarGz(gzipSync(Buffer.concat([timestamp, regular])), 'provod'), binary);
+  for (const record of ['18 path=../escape\n', '11 size=99\n', '99 mtime=1\n', '11 mtime=1\n11 mtime=2\n']) {
+    assert.throws(() => extractTarGz(gzipSync(Buffer.concat([pax(record), regular])), 'provod'), /unsafe|PAX/);
+  }
+  assert.throws(() => extractTarGz(gzipSync(Buffer.concat([timestamp, timestamp, regular])), 'provod'), /unsafe|PAX/);
+  assert.throws(() => extractTarGz(gzipSync(Buffer.concat([regular.subarray(0, 1024), timestamp, Buffer.alloc(1024)])), 'provod'), /unsafe|PAX/);
 });
 
 test('rejects a tar archive whose header checksum is invalid', () => {

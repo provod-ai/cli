@@ -8,7 +8,7 @@ Connect [Provod](https://provod.ai) to your AI coding agents from one command. T
 
 The CLI application ships as a standalone native executable. The direct installers do not require Node.js; the npm installation option requires Node.js 18.18 or newer and npm for its installer and launcher.
 
-> **Preview:** the CLI is pre-release and no public binary has been published yet. Installation commands below become usable with the first release.
+> **Preview:** public native binaries are available in [Releases](https://github.com/provod-ai/cli/releases). The CLI remains under active development.
 
 > **Temporary signing policy:** macOS binaries are ad-hoc signed, not Apple Developer ID signed or notarized, so Gatekeeper may warn or block first launch. Windows support is currently unavailable. SHA-256 and Sigstore provenance verify the downloaded build, but they do not establish an operating-system-trusted publisher. Apple Developer ID signing and notarization remain pending.
 
@@ -31,7 +31,7 @@ The CLI application ships as a standalone native executable. The direct installe
 
 ### npm
 
-Requires Node.js 18.18 or newer and npm. The package version maps exactly to GitHub Release `v<version>`; installation downloads, verifies, and stores the matching native executable inside the package.
+Requires Node.js 18.18 or newer and npm. **Release transition:** published npm `0.1.0` still requires Cosign; the no-Cosign installer described here is pending a new npm/native release. Immutable `0.1.0` will not be republished. To install without Cosign now, use the direct installer once this change reaches `main`. The package version maps exactly to GitHub Release `v<version>`; installation downloads, verifies, and stores the matching native executable inside the package.
 
 ```bash
 npm install -g @provod-ai/cli
@@ -164,9 +164,22 @@ Use repeatable `--agent <name>` and `--model <agent>=<model>` flags for determin
 | Linux | arm64 | `provod-v<version>-linux-arm64.tar.gz` |
 | Linux | x64 | `provod-v<version>-linux-x64.tar.gz` |
 
+## Installer maintenance policy
+
+Do not introduce mandatory user-installed Cosign in user installers. Additional user-facing prerequisites, restrictions or security gates require explicit user approval before becoming mandatory; offer optional behavior first. Release-pipeline signing and explicit optional/manual verification remain supported. Preserve SHA-256 integrity and strict input, URL, manifest and archive validation. Never bootstrap an unverified verifier.
+
 ## Release verification
 
-The POSIX and npm installers require a trusted Cosign on PATH (tested with v2.6.1). Install it independently from the official Sigstore distribution; the installers never download a verifier or bypass verification. They download the platform archive, `SHA256SUMS` and its Sigstore bundle, require exactly the four same-version platform archive entries listed above, verify SHA-256 and the exact workflow/tag signature, and only then replace the installed executable. Each release contains exactly four archives, four sibling provenance bundles, and `SHA256SUMS` (nine files). Older five-platform manifests are not accepted by these installers.
+By default, the POSIX and npm installers need **no Cosign**. They download the platform archive and `SHA256SUMS` over HTTPS, require exactly the four same-version platform archive entries listed above, verify SHA-256, validate the archive, and only then replace the installed executable. SHA-256 detects corruption or an archive changed without a matching manifest, but does **not** authenticate the publisher if an attacker replaces both archive and manifest. Default installation trusts HTTPS and the GitHub release account; it does not verify Sigstore provenance.
+
+For optional signature verification, independently install a trusted [Cosign](https://docs.sigstore.dev/cosign/system_config/installation/) on PATH (tested with v2.6.1) and explicitly opt in:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/provod-ai/cli/main/install.sh | PROVOD_VERIFY_SIGNATURE=1 sh
+PROVOD_VERIFY_SIGNATURE=1 npm install -g @provod-ai/cli
+```
+
+`PROVOD_VERIFY_SIGNATURE` accepts only `0` (default) or `1`. Opt-in verification requires the exact workflow/tag signature and fails closed if Cosign is missing, the bundle cannot be downloaded, or verification fails; it never falls back to checksum-only mode. The installers never download or execute a verifier bootstrap. Published signatures remain available: each release contains exactly four archives, four sibling provenance bundles, and `SHA256SUMS` (nine files). Older five-platform manifests are not accepted by these installers.
 
 Each archive has a sibling `<archive>.sigstore.json` bundle containing a keyless release-approval predicate in SLSA v1 format. These binaries are built externally, not in GitHub Actions: macOS ARM64 and Linux ARM64 are native; macOS x64 is tested under Rosetta and Linux x64 under Docker emulation, not native Intel hardware. The `external-artifact-approval/v1` build type binds the approved archive hashes, original production source commit/fingerprint, separate approval workflow commit, and execution modes. It is not a claim of a hermetic CI build or a SLSA build level. To verify it with [Cosign](https://docs.sigstore.dev/cosign/verifying/verify/):
 

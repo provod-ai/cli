@@ -7,6 +7,11 @@ usage() {
 }
 
 [ "$#" -le 1 ] || usage
+# Signature verification is opt-in; SHA-256 verification is always required.
+case "${PROVOD_VERIFY_SIGNATURE-0}" in
+  0|1) ;;
+  *) printf '%s\n' 'PROVOD_VERIFY_SIGNATURE must be 0 or 1' >&2; exit 2 ;;
+esac
 requested_version=${1:-}
 version=${requested_version#v}
 
@@ -229,13 +234,15 @@ fi
 actual=${actual%% *}
 [ "$actual" = "$expected" ] || { printf '%s\n' 'release checksum mismatch' >&2; exit 1; }
 
-command -v cosign >/dev/null 2>&1 || { printf '%s\n' 'trusted Cosign is required for release provenance verification' >&2; exit 1; }
-fetch "$base_url/$asset.sigstore.json" "$temporary/$asset.sigstore.json" "$MAX_METADATA_BYTES"
-cosign verify-blob-attestation --new-bundle-format=true --type slsaprovenance1 \
-  --bundle "$temporary/$asset.sigstore.json" \
-  --certificate-identity "https://github.com/provod-ai/cli-source/.github/workflows/native-release.yml@refs/tags/v${version}" \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-  "$temporary/$asset" >/dev/null 2>&1 || { printf '%s\n' 'release provenance verification failed' >&2; exit 1; }
+if [ "${PROVOD_VERIFY_SIGNATURE:-0}" = 1 ]; then
+  command -v cosign >/dev/null 2>&1 || { printf '%s\n' 'trusted Cosign is required for release provenance verification' >&2; exit 1; }
+  fetch "$base_url/$asset.sigstore.json" "$temporary/$asset.sigstore.json" "$MAX_METADATA_BYTES"
+  cosign verify-blob-attestation --new-bundle-format=true --type slsaprovenance1 \
+    --bundle "$temporary/$asset.sigstore.json" \
+    --certificate-identity "https://github.com/provod-ai/cli-source/.github/workflows/native-release.yml@refs/tags/v${version}" \
+    --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+    "$temporary/$asset" >/dev/null 2>&1 || { printf '%s\n' 'release provenance verification failed' >&2; exit 1; }
+fi
 
 manifest="$temporary/archive-members"
 tar -tzf "$temporary/$asset" > "$manifest" 2>/dev/null || { printf '%s\n' 'archive listing failed' >&2; exit 1; }
