@@ -74,7 +74,7 @@ fetch() {
   rm -f "$output"
   if command -v curl >/dev/null 2>&1; then
     effective=$(curl --disable --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
-      --max-redirs 3 --connect-timeout 10 --max-time 120 --retry 3 \
+      --max-redirs 3 --connect-timeout 10 --max-time 300 --retry 3 \
       --max-filesize "$limit" --silent --show-error --output "$output" --write-out '%{url_effective}' "$url") || {
         rm -f "$output"
         printf '%s\n' 'download failed' >&2
@@ -88,7 +88,7 @@ fetch() {
     esac
     (
       ulimit -f "$download_limit_blocks"
-      exec wget --quiet --no-config --no-netrc --https-only --max-redirect=3 --timeout=120 --tries=3 --output-document="$output" "$url"
+      exec wget --quiet --no-config --no-netrc --https-only --max-redirect=3 --timeout=300 --tries=3 --output-document="$output" "$url"
     ) || {
       rm -f "$output"
       printf '%s\n' 'download failed' >&2

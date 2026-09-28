@@ -30,7 +30,7 @@ function tarMembers(archive) {
 test('public package manifest has no runtime dependencies and pins install to its own version', async () => {
   const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
   assert.equal(manifest.name, '@provod-ai/cli');
-  assert.equal(manifest.version, '0.1.1');
+  assert.equal(manifest.version, '0.1.2');
   assert.deepEqual(manifest.bin, { provod: 'bin/provod.js' });
   assert.equal(manifest.scripts.postinstall, 'node scripts/postinstall.cjs');
   assert.deepEqual(manifest.dependencies, undefined);

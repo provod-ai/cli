@@ -336,6 +336,19 @@ test('rejects inconsistent ZIP local and central metadata', () => {
   assert.throws(() => extractZip(archive, 'provod.exe'), /metadata/);
 });
 
+test('uses a five-minute download deadline by default', async (context) => {
+  const server = await releaseServer({ '/asset': { body: 'ok' } });
+  context.after(server.close);
+  const setTimer = global.setTimeout;
+  const deadlines = [];
+  context.mock.method(global, 'setTimeout', (callback, delay, ...args) => {
+    deadlines.push(delay);
+    return setTimer(callback, delay, ...args);
+  });
+  assert.equal((await download(`${server.baseUrl}/asset`, { allowInsecureTestUrl: true })).toString(), 'ok');
+  assert.ok(deadlines.includes(300_000), `Expected five-minute deadline, got ${deadlines}`);
+});
+
 test('bounds response size, timeout, and redirects', async (context) => {
   const server = await releaseServer({
     '/large': { body: '123456' },

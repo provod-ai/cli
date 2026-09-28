@@ -48,7 +48,7 @@ function resolveRedirect(current, location) {
 }
 
 async function download(url, options = {}) {
-  const { maxBytes = 150 * 1024 * 1024, timeoutMs = 30_000, maxRedirects = 3 } = options;
+  const { maxBytes = 150 * 1024 * 1024, timeoutMs = 300_000, maxRedirects = 3 } = options;
   const parsed = new URL(url);
   if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) {
     throw new Error('Download URL is unsafe');
