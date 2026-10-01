@@ -1,6 +1,6 @@
 {
   "name": "@provod-ai/cli",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Secure npm installer and launcher for the native Provod CLI",
   "license": "MIT",
   "homepage": "https://provod.ai",
