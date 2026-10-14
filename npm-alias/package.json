@@ -1,0 +1,39 @@
+{
+  "name": "provod",
+  "version": "0.1.5",
+  "description": "Short npx launcher for the Provod CLI",
+  "license": "MIT",
+  "homepage": "https://provod.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/provod-ai/cli.git",
+    "directory": "npm-alias"
+  },
+  "bugs": "https://github.com/provod-ai/cli/issues",
+  "bin": {
+    "provod": "bin/provod.js"
+  },
+  "files": [
+    "bin/provod.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@provod-ai/cli": "0.1.5"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
