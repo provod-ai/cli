@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global require, __filename, process, console */
 'use strict';
 
 const { spawn } = require('node:child_process');
