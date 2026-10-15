@@ -163,3 +163,32 @@ jobs:
           test "$(node --version)" = "v24.21.0"
           node -e 'const [major, minor, patch] = process.argv[1].split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) throw new Error("npm 11.5.1 or newer is required")' "$(npm --version)"
           npm publish "$TARBALL" --provenance --access public
+
+  publish-alias:
+    if: github.repository == 'provod-ai/cli' && github.event_name == 'release' && startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: ubuntu-24.04
+    environment: npm-release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24.21.0
+          registry-url: https://registry.npmjs.org
+      - name: Verify pinned alias and publish after scoped package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./npm/package.json').version")"
+          test "$GITHUB_REF" = "refs/tags/v$VERSION"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node -e 'const a=require("./npm-alias/package.json"); const v=process.argv[1]; if(a.name!=="provod" || a.version!==v || a.dependencies["@provod-ai/cli"]!==v) throw new Error("Alias identity mismatch")' "$VERSION"
+          test "$(npm view "@provod-ai/cli@$VERSION" version)" = "$VERSION"
+          npm pack ./npm-alias --dry-run --ignore-scripts
+          npm publish ./npm-alias --provenance --access public
