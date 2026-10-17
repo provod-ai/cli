@@ -34,7 +34,7 @@ test('public package manifest has no runtime dependencies and pins install to it
   assert.deepEqual(manifest.bin, { provod: 'bin/provod.js' });
   assert.equal(manifest.scripts.postinstall, 'node scripts/postinstall.cjs');
   assert.deepEqual(manifest.dependencies, undefined);
-  assert.deepEqual(manifest.os, ['darwin', 'linux']);
+  assert.deepEqual(manifest.os, ['darwin', 'linux', 'win32']);
   assert.deepEqual(manifest.cpu, ['arm64', 'x64']);
   assert.match(manifest.engines.node, /^>=/);
 });

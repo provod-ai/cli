@@ -4,12 +4,7 @@
 const { spawn } = require('node:child_process');
 const { join } = require('node:path');
 
-if (process.platform === 'win32') {
-  console.error('Windows support is currently unavailable. Use macOS or Linux.');
-  process.exit(1);
-}
-
-const executable = join(__dirname, '..', 'vendor', 'provod');
+const executable = join(__dirname, '..', 'vendor', process.platform === 'win32' ? 'provod.exe' : 'provod');
 const child = spawn(executable, process.argv.slice(2), {
   shell: false,
   stdio: 'inherit',

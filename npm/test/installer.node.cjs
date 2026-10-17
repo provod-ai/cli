@@ -11,9 +11,9 @@ const { gzipSync, gunzipSync } = require('node:zlib');
 const { download, expectedChecksum, extractTarGz, extractZip, install, resolveRedirect, resolveTarget, validateVersion } = require('../lib/installer.cjs');
 
 function checksumManifest(asset, digest) {
-  const version = /^provod-v(.+)-linux-x64\.tar\.gz$/.exec(asset)[1];
-  return ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64']
-    .map((target) => `${digest}  provod-v${version}-${target}.tar.gz\n`).join('');
+  const version = /^provod-v(.+)-(?:linux-x64\.tar\.gz|windows-x64\.zip)$/.exec(asset)[1];
+  return ['darwin-arm64.tar.gz', 'darwin-x64.tar.gz', 'linux-arm64.tar.gz', 'linux-x64.tar.gz', 'windows-x64.zip']
+    .map((target) => `${digest}  provod-v${version}-${target}\n`).join('');
 }
 
 function crc32(buffer) {
@@ -99,25 +99,36 @@ async function releaseServer(routes) {
   };
 }
 
-test('maps only the four supported release targets', () => {
+test('maps the five supported release targets', () => {
   assert.deepEqual(resolveTarget('darwin', 'arm64', '1.2.3'), {
     asset: 'provod-v1.2.3-darwin-arm64.tar.gz', executable: 'provod',
   });
   assert.equal(resolveTarget('darwin', 'x64', '1.2.3').asset, 'provod-v1.2.3-darwin-x64.tar.gz');
   assert.equal(resolveTarget('linux', 'arm64', '1.2.3').asset, 'provod-v1.2.3-linux-arm64.tar.gz');
   assert.equal(resolveTarget('linux', 'x64', '1.2.3').asset, 'provod-v1.2.3-linux-x64.tar.gz');
-  assert.throws(() => resolveTarget('win32', 'x64', '1.2.3'), /Windows.*unavailable/);
+  assert.deepEqual(resolveTarget('win32', 'x64', '1.2.3'), { asset: 'provod-v1.2.3-windows-x64.zip', executable: 'provod.exe' });
   for (const [platform, arch] of [['win32', 'arm64'], ['freebsd', 'x64'], ['linux', 'ia32']]) {
     assert.throws(() => resolveTarget(platform, arch, '1.2.3'), /Unsupported platform/);
   }
 });
 
-test('checksum manifest requires exactly four same-version POSIX archives', () => {
+test('pre-Windows versions require four archives and cannot select a Windows artifact', () => {
+  const names = ['darwin-arm64.tar.gz', 'darwin-x64.tar.gz', 'linux-arm64.tar.gz', 'linux-x64.tar.gz'];
+  for (const version of ['0.0.9', '0.1.7']) {
+    const asset = `provod-v${version}-linux-x64.tar.gz`;
+    const sums = names.map((target) => `${'a'.repeat(64)}  provod-v${version}-${target}\n`).join('');
+    assert.equal(expectedChecksum(sums, asset), 'a'.repeat(64));
+    assert.throws(() => expectedChecksum(sums + `${'a'.repeat(64)}  provod-v${version}-windows-x64.zip\n`, asset), /checksum|SHA256SUMS/i);
+    assert.throws(() => resolveTarget('win32', 'x64', version), /Unsupported platform/);
+  }
+});
+
+test('checksum manifest requires exactly five same-version archives including Windows', () => {
   const asset = 'provod-v1.2.3-linux-x64.tar.gz';
-  const names = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'].map((target) => `provod-v1.2.3-${target}.tar.gz`);
+  const names = ['darwin-arm64.tar.gz', 'darwin-x64.tar.gz', 'linux-arm64.tar.gz', 'linux-x64.tar.gz', 'windows-x64.zip'].map((target) => `provod-v1.2.3-${target}`);
   const lines = names.map((name) => `${'a'.repeat(64)}  ${name}`);
   assert.equal(expectedChecksum(lines.join('\n') + '\n', asset), 'a'.repeat(64));
-  for (const invalid of [lines.slice(1), [...lines, `${'a'.repeat(64)}  provod-v1.2.3-windows-x64.zip`],
+  for (const invalid of [lines.slice(1), [...lines, `${'a'.repeat(64)}  provod-v1.2.3-windows-arm64.zip`],
     [...lines.slice(1), lines[1]], lines.map((line, i) => i === 0 ? line.replace('v1.2.3', 'v9.9.9') : line)]) {
     assert.throws(() => expectedChecksum(invalid.join('\n') + '\n', asset), /checksum|SHA256SUMS/i);
   }
@@ -220,18 +231,19 @@ test('refuses checksum-valid archives without signed provenance', async (context
   assert.deepEqual(await readdir(packageRoot), []);
 });
 
-test('Windows installation fails before network access or filesystem writes', async (context) => {
+test('Windows x64 ZIP extraction/install is exercised on the host; ARM64 fails before writes', async (context) => {
   const packageRoot = await mkdtemp(join(tmpdir(), 'provod-npm-'));
   context.after(() => rm(packageRoot, { recursive: true, force: true }));
-  let requests = 0;
-  const server = await releaseServer({ '/v2.0.0/SHA256SUMS': () => { requests += 1; } });
+  const binary = Buffer.from('fixture PE bytes; extraction contract, not Windows runtime');
+  const archive = zipArchive('provod.exe', binary);
+  const asset = 'provod-v2.0.0-windows-x64.zip';
+  const server = await releaseServer({ [`/v2.0.0/${asset}`]: { body: archive }, '/v2.0.0/SHA256SUMS': { body: checksumManifest(asset, createHash('sha256').update(archive).digest('hex')) } });
   context.after(server.close);
-  for (const arch of ['x64', 'arm64']) {
-    await assert.rejects(install({ version: '2.0.0', platform: 'win32', arch,
-      packageRoot, baseUrl: server.baseUrl, allowInsecureTestUrl: true }), /Windows.*unavailable/);
-  }
-  assert.equal(requests, 0);
+  await assert.rejects(install({ version: '2.0.0', platform: 'win32', arch: 'arm64', packageRoot, baseUrl: server.baseUrl, allowInsecureTestUrl: true }), /Unsupported platform/);
   assert.deepEqual(await readdir(packageRoot), []);
+  const installed = await install({ version: '2.0.0', platform: 'win32', arch: 'x64', packageRoot, baseUrl: server.baseUrl, allowInsecureTestUrl: true });
+  assert.equal(installed, join(packageRoot, 'vendor', 'provod.exe'));
+  assert.deepEqual(await readFile(installed), binary);
 });
 
 test('accepts only the release timestamp PAX header before the executable', () => {

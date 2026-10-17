@@ -55,16 +55,16 @@ test('wrapper fails closed with reinstall guidance when lifecycle scripts were s
   assert.match(result.stderr, /reinstall @provod-ai\/cli without --ignore-scripts/);
 });
 
-test('wrapper refuses Windows even when lifecycle scripts were bypassed', async () => {
-  const wrapper = join(__dirname, '..', 'bin', 'provod.js');
-  const result = await run(process.execPath, ['-e',
-    "Object.defineProperty(process, 'platform', { value: 'win32' }); require(process.argv[1]);", wrapper], {
-    env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  assert.equal(result.code, 1);
-  assert.equal(result.stdout, '');
-  assert.match(result.stderr, /Windows support is currently unavailable/);
-  assert.doesNotMatch(result.stderr, /ENOENT|reinstall/);
+test('wrapper selects provod.exe and forwards Unicode arguments (host fixture, not Windows execution)', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'provod-wrapper-win-'));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'bin')); await mkdir(join(root, 'vendor'));
+  const wrapper = join(root, 'bin', 'provod.js');
+  await writeFile(wrapper, await readFile(join(__dirname, '..', 'bin', 'provod.js')));
+  await writeFile(join(root, 'vendor', 'provod.exe'), '#!/bin/sh\nprintf "%s" "$1"\nexit 23\n');
+  await chmod(join(root, 'vendor', 'provod.exe'), 0o755);
+  const result = await run(process.execPath, ['-e', "Object.defineProperty(process, 'platform', { value: 'win32' }); process.argv=[process.execPath,process.argv[1],'Тест User']; require(process.argv[1]);", wrapper], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  assert.equal(result.code, 23); assert.equal(result.stdout, 'Тест User'); assert.equal(result.stderr, '');
 });
 
 test('wrapper forwards termination signals from the shim to the native process', async (context) => {

@@ -70,13 +70,13 @@ jobs:
           jq -r '.assets[] | [.name, .browser_download_url] | @tsv' "$RUNNER_TEMP/release.json" |
           while IFS=$'\t' read -r name url; do
             case "$name" in
-              SHA256SUMS|provod-v"${VERSION}"-darwin-arm64.tar.gz|provod-v"${VERSION}"-darwin-x64.tar.gz|provod-v"${VERSION}"-linux-arm64.tar.gz|provod-v"${VERSION}"-linux-x64.tar.gz|provod-v"${VERSION}"-darwin-arm64.tar.gz.sigstore.json|provod-v"${VERSION}"-darwin-x64.tar.gz.sigstore.json|provod-v"${VERSION}"-linux-arm64.tar.gz.sigstore.json|provod-v"${VERSION}"-linux-x64.tar.gz.sigstore.json) ;;
+              SHA256SUMS|provod-v"${VERSION}"-windows-x64.zip|provod-v"${VERSION}"-windows-x64.zip.sigstore.json|provod-v"${VERSION}"-darwin-arm64.tar.gz|provod-v"${VERSION}"-darwin-x64.tar.gz|provod-v"${VERSION}"-linux-arm64.tar.gz|provod-v"${VERSION}"-linux-x64.tar.gz|provod-v"${VERSION}"-darwin-arm64.tar.gz.sigstore.json|provod-v"${VERSION}"-darwin-x64.tar.gz.sigstore.json|provod-v"${VERSION}"-linux-arm64.tar.gz.sigstore.json|provod-v"${VERSION}"-linux-x64.tar.gz.sigstore.json) ;;
               *) echo "Unexpected release asset: $name" >&2; exit 1 ;;
             esac
             curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
               --max-time 120 --output "$RUNNER_TEMP/release-assets/$name" "$url"
           done
-          test "$(find "$RUNNER_TEMP/release-assets" -type f | wc -l | tr -d ' ')" = 9
+          test "$(find "$RUNNER_TEMP/release-assets" -type f | wc -l | tr -d ' ')" = 11
           node - "$VERSION" "$RUNNER_TEMP/release-assets/SHA256SUMS" <<'NODE'
           const { readFileSync } = require('node:fs');
           const [version, path] = process.argv.slice(2);
@@ -85,6 +85,7 @@ jobs:
             `provod-v${version}-darwin-x64.tar.gz`,
             `provod-v${version}-linux-arm64.tar.gz`,
             `provod-v${version}-linux-x64.tar.gz`,
+            `provod-v${version}-windows-x64.zip`,
           ]);
           const lines = readFileSync(path, 'utf8').split('\n');
           if (lines.at(-1) !== '') throw new Error('SHA256SUMS must end with a newline');
@@ -95,12 +96,12 @@ jobs:
             return match[2];
           });
           if (actual.length !== expected.size || new Set(actual).size !== expected.size || actual.some((name) => !expected.has(name))) {
-            throw new Error('SHA256SUMS must contain exactly the four native archives');
+            throw new Error('SHA256SUMS must contain exactly the five native archives');
           }
           NODE
           (cd "$RUNNER_TEMP/release-assets" && sha256sum --check --strict SHA256SUMS)
-          for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
-            archive="$RUNNER_TEMP/release-assets/provod-v${VERSION}-${target}.tar.gz"
+          for filename in "provod-v${VERSION}-darwin-arm64.tar.gz" "provod-v${VERSION}-darwin-x64.tar.gz" "provod-v${VERSION}-linux-arm64.tar.gz" "provod-v${VERSION}-linux-x64.tar.gz" "provod-v${VERSION}-windows-x64.zip"; do
+            archive="$RUNNER_TEMP/release-assets/$filename"
             cosign verify-blob-attestation --new-bundle-format=true --type slsaprovenance1 \
               --bundle "$archive.sigstore.json" \
               --certificate-identity "https://github.com/provod-ai/cli-source/.github/workflows/native-release.yml@refs/tags/v${VERSION}" \

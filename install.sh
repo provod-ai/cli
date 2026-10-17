@@ -204,6 +204,10 @@ expected=$(awk -v expected_asset="$asset" -v version="$version" '
     found=0; bad=0
     split("darwin-arm64 darwin-x64 linux-arm64 linux-x64", targets, " ")
     for (i in targets) allowed["provod-v" version "-" targets[i] ".tar.gz"]=1
+    split(version, v, "."); expected_count=4
+    if (v[1]+0 > 0 || v[2]+0 > 1 || (v[2]+0 == 1 && v[3]+0 >= 8)) {
+      allowed["provod-v" version "-windows-x64.zip"]=1; expected_count=5
+    }
   }
   {
     # Older mawk lacks interval expressions such as {64}; check width explicitly.
@@ -218,7 +222,7 @@ expected=$(awk -v expected_asset="$asset" -v version="$version" '
     if (seen[name] > 1) bad=1
     if (name == expected_asset) { found++; value=digest }
   }
-  END { if (bad || found != 1 || NR != 4) exit 1; print value }
+  END { if (bad || found != 1 || NR != expected_count) exit 1; print value }
 ' "$temporary/SHA256SUMS") || {
   printf '%s\n' 'release checksum manifest is malformed, duplicated, or ambiguous' >&2
   exit 1
@@ -302,9 +306,12 @@ in_destination=1
 [ "$(directory_identity .)" = "$verified_identity" ] || { printf '%s\n' 'install directory identity changed during entry' >&2; exit 1; }
 
 waited=0
-lock_claim=$(mktemp .provod.install.claim.XXXXXX)
+# Assign the reserved name before the child creates it. A signal delivered
+# while mktemp's command substitution returns can otherwise leave an unnamed,
+# empty claim that cleanup cannot prove belongs to this invocation.
+lock_claim=".provod.install.claim.$$.${temporary##*/}"
 umask 077
-printf '%s\n' "$lock_token" > "$lock_claim"
+(set -C; printf '%s\n' "$lock_token" > "$lock_claim")
 while ! ln "$lock_claim" .provod.install.lock 2>/dev/null; do
   [ "$waited" -lt 120 ] || { printf '%s\n' 'timed out waiting for another installation' >&2; exit 1; }
   sleep 1

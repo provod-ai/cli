@@ -1,7 +1,7 @@
 # Provod CLI
 
 [![release](https://img.shields.io/github/v/release/provod-ai/cli?style=flat-square)](https://github.com/provod-ai/cli/releases)
-[![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-111111?style=flat-square)](#supported-platforms)
+[![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-111111?style=flat-square)](#supported-platforms)
 [![license](https://img.shields.io/github/license/provod-ai/cli?style=flat-square)](./LICENSE)
 
 Connect [Provod](https://provod.ai) to your AI coding agents from one command. The CLI configures Provod models and the hosted MCP server, manages workspace API keys, and reports account balance across 21 supported clients.
@@ -10,7 +10,7 @@ The CLI application ships as a standalone native executable. The direct installe
 
 > **Preview:** public native binaries are available in [Releases](https://github.com/provod-ai/cli/releases). The CLI remains under active development.
 
-> **Temporary signing policy:** macOS binaries are ad-hoc signed, not Apple Developer ID signed or notarized, so Gatekeeper may warn or block first launch. Windows support is currently unavailable. SHA-256 and Sigstore provenance verify the downloaded build, but they do not establish an operating-system-trusted publisher. Apple Developer ID signing and notarization remain pending.
+> **Temporary signing policy:** macOS binaries are ad-hoc signed, not Apple Developer ID signed or notarized, so Gatekeeper may warn or block first launch. Windows x64 binaries are cross-built, structurally audited and not Authenticode signed; Windows runtime execution is not run. SHA-256 and Sigstore provenance verify the downloaded build, but they do not establish an operating-system-trusted publisher. Apple Developer ID signing and notarization remain pending.
 
 ## Contents
 
@@ -53,7 +53,31 @@ The installer automatically downloads the latest release to `~/.local/bin/provod
 
 ### Windows
 
-Windows support is currently unavailable. Windows CI and release builds are disabled; the PowerShell and npm installers fail before downloading or changing files. Use macOS or Linux.
+Native Windows x64 is available through PowerShell 5.1 or 7 with Node.js/npm already installed:
+
+```powershell
+npx provod@latest setup
+# Equivalent scoped package:
+npx @provod-ai/cli@latest setup
+```
+
+Use `provod environments --json` to inspect Windows and WSL instances. Setup defaults to the current environment. To explicitly configure both, repeat the environment flag:
+
+```powershell
+npx provod@latest setup --environment windows --environment "wsl:Ubuntu" --provision-runtime
+```
+
+`--provision-runtime` approves a version/hash-pinned standalone helper in the target user profile; it does not install Node, WSL or a distribution, start stopped distributions, elevate privileges, or copy refresh tokens. Each environment selects its own agents and gets independent control/MCP grants and installation receipts. Partial success is reported per environment; successful environments are not silently undone. `status`, `repair`, and `uninstall` also accept repeated `--environment` flags.
+
+Windows ARM64 is unsupported. Cline CLI and the source-verified Cline VS Code extension **4.1.25** can configure the same target-local shared provider/MCP store. Registered local VS Code and Remote-WSL extension profiles are detected separately and labelled in target-local selection; they are not independent stores, so selecting Cline writes that store once. Extension-only setup does not require the Cline CLI. Older/newer unverified extension layouts, custom IDE extension directories and extension-only custom `CLINE_*` storage roots are refused rather than guessed. Other VS Code extensions are not supported merely because their CLI adapter is listed. See the [extension support contract](#extension-support-contract) for evidence and limits. Shell profiles use the target OS Documents API and detected PowerShell edition; `PROVOD_POWERSHELL_PROFILE` explicitly selects another profile. Private state requires a current-user DACL; existing public/shared state is rejected, not silently privatized.
+
+**Execution evidence:** Windows x64 PE/SEA and strict ZIP/checksum contracts are tested structurally; Windows runtime, PowerShell desktop OAuth and real WSL interoperability are not run on Windows hardware. Linux/macOS fixture and runtime evidence are separate. The PowerShell download installer is not supplied; use npm above or the verified ZIP manually.
+
+### Extension support contract
+
+Cline extension support is pinned to upstream [4.1.25 manifest](https://github.com/cline/cline/blob/a42df8c8d5fd9d9f9a9073589baffe32ea9bb2f0/apps/vscode/package.json), [shared storage context](https://github.com/cline/cline/blob/a42df8c8d5fd9d9f9a9073589baffe32ea9bb2f0/apps/vscode/src/shared/storage/storage-context.ts), [provider manager wiring](https://github.com/cline/cline/blob/a42df8c8d5fd9d9f9a9073589baffe32ea9bb2f0/apps/vscode/src/sdk/provider-migration.ts), and [provider file schema](https://github.com/cline/cline/blob/a42df8c8d5fd9d9f9a9073589baffe32ea9bb2f0/sdk/packages/core/src/types/provider-settings.ts). The supported default files are `~/.cline/data/settings/providers.json` and `~/.cline/data/settings/cline_mcp_settings.json`, not VS Code SQLite or SecretStorage. Profiles sharing this store cannot be independently configured. Close/reload Cline around configuration to avoid concurrent cached-state writes.
+
+Detection requires VS Code's installed/profile `extensions.json` registration, matching `saoudrizwan.claude-dev` publisher/name/version manifest and a regular extension entry point; a directory name alone is not evidence. Local `.vscode/extensions` and WSL `.vscode-server/extensions` are separate hosts. Target-local setup checks registered profiles before writing. Foreign pre-provisioning inventory is CLI/config evidence only; a provisioned helper performs extension verification inside the selected OS, never by opening foreign paths locally. Registration proves installation, not that a profile is active or the extension has been run. The storage writer/receipts are fixture-tested; live extension execution, Windows OAuth and real Remote-WSL are not claimed. No support is inferred for other IDEs, portable/custom extension roots, Insiders, other Cline versions, or other agents' VS Code extensions.
 
 ### Manual
 
@@ -115,7 +139,7 @@ provod mcp
 
 ## Supported agents
 
-`provod setup` can configure any combination of these 21 clients:
+The local adapter catalog contains these 21 clients; the live integrity-checked manifest decides which are available. This is not a claim that every adapter has been executed on Windows:
 
 - Hermes Agent
 - Claude Code
@@ -163,6 +187,7 @@ Use repeatable `--agent <name>` and `--model <agent>=<model>` flags for determin
 | macOS | Intel | `provod-v<version>-darwin-x64.tar.gz` |
 | Linux | arm64 | `provod-v<version>-linux-arm64.tar.gz` |
 | Linux | x64 | `provod-v<version>-linux-x64.tar.gz` |
+| Windows | x64 | `provod-v<version>-windows-x64.zip` |
 
 ## Installer maintenance policy
 
@@ -170,7 +195,7 @@ Do not introduce mandatory user-installed Cosign in user installers. Additional 
 
 ## Release verification
 
-By default, the POSIX and npm installers need **no Cosign**. They download the platform archive and `SHA256SUMS` over HTTPS, require exactly the four same-version platform archive entries listed above, verify SHA-256, validate the archive, and only then replace the installed executable. SHA-256 detects corruption or an archive changed without a matching manifest, but does **not** authenticate the publisher if an attacker replaces both archive and manifest. Default installation trusts HTTPS and the GitHub release account; it does not verify Sigstore provenance.
+By default, the POSIX and npm installers need **no Cosign**. They download the platform archive and `SHA256SUMS` over HTTPS, require the exact same-version platform archive entries listed above (five from 0.1.8; four for pre-Windows releases), verify SHA-256, validate the archive, and only then replace the installed executable. SHA-256 detects corruption or an archive changed without a matching manifest, but does **not** authenticate the publisher if an attacker replaces both archive and manifest. Default installation trusts HTTPS and the GitHub release account; it does not verify Sigstore provenance.
 
 For optional signature verification, independently install a trusted [Cosign](https://docs.sigstore.dev/cosign/system_config/installation/) on PATH (tested with v2.6.1) and explicitly opt in:
 
@@ -179,9 +204,9 @@ curl -fsSL https://raw.githubusercontent.com/provod-ai/cli/main/install.sh | PRO
 PROVOD_VERIFY_SIGNATURE=1 npm install -g @provod-ai/cli
 ```
 
-`PROVOD_VERIFY_SIGNATURE` accepts only `0` (default) or `1`. Opt-in verification requires the exact workflow/tag signature and fails closed if Cosign is missing, the bundle cannot be downloaded, or verification fails; it never falls back to checksum-only mode. The installers never download or execute a verifier bootstrap. Published signatures remain available: each release contains exactly four archives, four sibling provenance bundles, and `SHA256SUMS` (nine files). Older five-platform manifests are not accepted by these installers.
+`PROVOD_VERIFY_SIGNATURE` accepts only `0` (default) or `1`. Opt-in verification requires the exact workflow/tag signature and fails closed if Cosign is missing, the bundle cannot be downloaded, or verification fails; it never falls back to checksum-only mode. The installers never download or execute a verifier bootstrap. Published signatures remain available: releases from 0.1.8 contain exactly five archives, five sibling provenance bundles, and `SHA256SUMS` (eleven files). Earlier four-target releases retain their original immutable manifests.
 
-Each archive has a sibling `<archive>.sigstore.json` bundle containing a keyless release-approval predicate in SLSA v1 format. These binaries are built externally, not in GitHub Actions: macOS ARM64 and Linux ARM64 are native; macOS x64 is tested under Rosetta and Linux x64 under Docker emulation, not native Intel hardware. The `external-artifact-approval/v1` build type binds the approved archive hashes, original production source commit/fingerprint, separate approval workflow commit, and execution modes. It is not a claim of a hermetic CI build or a SLSA build level. To verify it with [Cosign](https://docs.sigstore.dev/cosign/verifying/verify/):
+Each archive has a sibling `<archive>.sigstore.json` bundle containing a keyless release-approval predicate in SLSA v1 format. These binaries are built externally, not in GitHub Actions: macOS ARM64 and Linux ARM64 are native; macOS x64 is tested under Rosetta and Linux x64 under Docker emulation, not native Intel hardware. Windows x64 is cross-built and structurally tested, not executed on a Windows host. The `external-artifact-approval/v1` build type binds the approved archive hashes, original production source commit/fingerprint, separate approval workflow commit, and execution modes. It is not a claim of a hermetic CI build or a SLSA build level. To verify it with [Cosign](https://docs.sigstore.dev/cosign/verifying/verify/):
 
 ```bash
 VERSION=x.y.z
@@ -198,7 +223,7 @@ cosign verify-blob-attestation \
 
 Do not weaken the certificate identity to only an organization or repository match. The exact approval workflow and release tag are part of the trust policy.
 
-Check the release notes before installing. Preview releases currently follow the temporary signing policy above: macOS is ad-hoc signed; Windows support is unavailable. Checksums and release-approval provenance do not provide Apple notarization, Microsoft Authenticode, or operating-system publisher trust.
+Check the release notes before installing. Preview releases currently follow the temporary signing policy above: macOS is ad-hoc signed; Windows x64 is unsigned and its runtime execution is not run. Checksums and release-approval provenance do not provide Apple notarization, Microsoft Authenticode, or operating-system publisher trust.
 
 This repository is a binary-only distribution channel with independent Git history. It contains installers, public documentation, and release assets—not the private source tree or source maps. The executable is a Node.js Single Executable Application whose embedded JavaScript can be inspected and extracted. Binary-only distribution does not provide source-code confidentiality or anti-reverse-engineering protection; it keeps the private source tree, source maps, and Git history out of this public repository.
 
@@ -222,7 +247,7 @@ Optional strict mode is `PROVOD_VERIFY_SIGNATURE=1 provod update --yes`. It requ
 
 ## Uninstall
 
-The preview does not expose an automatic `uninstall` command. Remove the executable manually:
+Use `provod uninstall --yes` to revoke its target-local grants and restore receipt-owned configuration. Repeat `--environment` to explicitly select other environments. This retains the executable and versioned helper runtime. Remove the executable manually only after cleanup:
 
 ```bash
 rm ~/.local/bin/provod
@@ -246,7 +271,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ### Unsupported platform
 
-Use one of the four targets listed under [Supported platforms](#supported-platforms).
+Use one of the five targets listed under [Supported platforms](#supported-platforms).
 
 ### Setup is blocked after an interrupted run
 

@@ -9,7 +9,7 @@ provod setup
 
 The package requires Node.js 18.18 or newer and npm for installation and for the small `provod` launcher. The Provod application itself is a standalone native executable downloaded from the GitHub Release whose `v<version>` exactly matches this package version.
 
-The installer supports macOS arm64/x64 and Linux arm64/x64. Windows support is currently unavailable. It downloads the deterministic platform archive and `SHA256SUMS` over HTTPS, always verifies SHA-256, validates the archive allowlist, and atomically installs the executable package-locally under `vendor/`.
+The installer supports macOS arm64/x64, Linux arm64/x64 and native Windows x64 (`windows-x64.zip`). Windows PE/SEA and ZIP contracts are structurally audited; Windows runtime execution is not run. Windows ARM64 is unsupported. It downloads the deterministic platform archive and `SHA256SUMS` over HTTPS, always verifies SHA-256, validates the archive allowlist, and atomically installs the executable package-locally under `vendor/`.
 
 Cosign is not required by default. Checksums detect corruption but do not authenticate the publisher if both archive and manifest are replaced; default installation trusts HTTPS and the GitHub release account, not verified Sigstore provenance. Published signatures remain available.
 
@@ -19,6 +19,6 @@ For optional verification, install trusted Cosign independently (tested with v2.
 
 Release downloads come only from `https://github.com/provod-ai/cli/releases/`; there is no production URL override and this package has no runtime dependencies.
 
-Preview signing policy: macOS binaries are ad-hoc signed rather than Apple Developer ID signed/notarized. Gatekeeper may warn or block execution. Checksums and Sigstore release-approval provenance verify approved external artifact identity and integrity, not CI construction or an operating-system-trusted publisher. ARM64 targets are native; macOS x64 uses Rosetta and Linux x64 Docker emulation. The signed approval distinguishes the original producer source from the later workflow/approval commit.
+Preview signing policy: macOS binaries are ad-hoc signed rather than Apple Developer ID signed/notarized. Gatekeeper may warn or block execution. Checksums and Sigstore release-approval provenance verify approved external artifact identity and integrity, not CI construction or an operating-system-trusted publisher. ARM64 targets are native; macOS x64 uses Rosetta and Linux x64 Docker emulation. Windows x64 is cross-built, not Authenticode signed, and not executed on Windows hardware. The signed approval distinguishes the original producer source from the later workflow/approval commit.
 
 See the [public CLI repository](https://github.com/provod-ai/cli) for commands, manual installation, release verification, support, and licensing.

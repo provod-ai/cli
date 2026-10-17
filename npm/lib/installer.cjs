@@ -20,17 +20,24 @@ function validateVersion(version) {
   return version;
 }
 
+// Keep the immutable pre-0.1.8 four-archive contract aligned with releaseTargets.
+function includesWindows(version) {
+  validateVersion(version);
+  const [major, minor, patch] = version.split(/[.+-]/).map(Number);
+  return major > 0 || minor > 1 || (minor === 1 && patch >= 8);
+}
+
 function resolveTarget(platform, arch, version) {
   validateVersion(version);
-  if (platform === 'win32') throw new Error('Unsupported platform: Windows support is currently unavailable. Use macOS or Linux.');
   const targets = {
     'darwin-arm64': ['darwin-arm64', 'tar.gz', 'provod'],
     'darwin-x64': ['darwin-x64', 'tar.gz', 'provod'],
     'linux-arm64': ['linux-arm64', 'tar.gz', 'provod'],
     'linux-x64': ['linux-x64', 'tar.gz', 'provod'],
+    'win32-x64': ['windows-x64', 'zip', 'provod.exe'],
   };
   const target = targets[`${platform}-${arch}`];
-  if (!target) throw new Error(`Unsupported platform: ${platform}-${arch}`);
+  if (!target || (platform === 'win32' && !includesWindows(version))) throw new Error(`Unsupported platform: ${platform}-${arch}`);
   return {
     asset: `provod-v${version}-${target[0]}.${target[1]}`,
     executable: target[2],
@@ -110,10 +117,12 @@ async function download(url, options = {}) {
 }
 
 function expectedChecksum(text, asset) {
-  const identity = /^provod-v(.+)-(darwin|linux)-(arm64|x64)\.tar\.gz$/.exec(asset);
+  const identity = /^provod-v(.+)-(?:darwin-(?:arm64|x64)\.tar\.gz|linux-(?:arm64|x64)\.tar\.gz|windows-x64\.zip)$/.exec(asset);
   if (!identity) throw new Error('Unsupported checksum asset');
-  const expected = new Set(['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64']
-    .map((target) => `provod-v${identity[1]}-${target}.tar.gz`));
+  const targets = ['darwin-arm64.tar.gz', 'darwin-x64.tar.gz', 'linux-arm64.tar.gz', 'linux-x64.tar.gz'];
+  if (includesWindows(identity[1])) targets.push('windows-x64.zip');
+  const expected = new Set(targets.map((target) => `provod-v${identity[1]}-${target}`));
+  if (!expected.has(asset)) throw new Error('Unsupported checksum asset');
   const lines = String(text).split('\n');
   if (lines.pop() !== '') throw new Error('Malformed SHA256SUMS: missing final newline');
   const seen = new Set();
@@ -124,7 +133,7 @@ function expectedChecksum(text, asset) {
     seen.add(match[2]);
     return match[2] === asset ? match[1] : null;
   }).filter(Boolean);
-  if (seen.size !== 4) throw new Error('SHA256SUMS checksum entries are missing: expected exactly four archives');
+  if (seen.size !== expected.size) throw new Error(`SHA256SUMS checksum entries are missing: expected exactly ${expected.size} archives`);
   if (matches.length !== 1) throw new Error('Checksum entry is missing or ambiguous');
   return matches[0];
 }
