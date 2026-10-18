@@ -12,6 +12,25 @@ The CLI application ships as a standalone native executable. The direct installe
 
 > **Temporary signing policy:** macOS binaries are ad-hoc signed, not Apple Developer ID signed or notarized, so Gatekeeper may warn or block first launch. Windows x64 binaries are cross-built, structurally audited and not Authenticode signed; Windows runtime execution is not run. SHA-256 and Sigstore provenance verify the downloaded build, but they do not establish an operating-system-trusted publisher. Apple Developer ID signing and notarization remain pending.
 
+## Automatic recovery and support logs (0.1.9)
+
+`provod login` replaces local CLI auth; `provod logout` forgets local OAuth
+credentials without server requests and leaves agent configuration/key files intact.
+Remote grants, installations and API keys remain active until expiry or user deletion
+in the [web interface](https://provod.ai). There is no automatic cleanup queue or
+refresh-token archive. `provod repair --yes` is local receipt/update recovery only.
+Real auth, private-write and ownership conflicts still fail truthfully.
+
+Logs are always retained in `~/.provod-cli/logs` on macOS/Linux or
+`%USERPROFILE%\.provod-cli\logs` on Windows (`PROVOD_CLI_STATE_DIR/logs` when overridden).
+Interactive setup failures show the exact session file. `--debug` changes console
+verbosity, not persistence. Attach only `operation-*.jsonl` files from that folder,
+never the whole state directory: credentials, cleanup entries and receipts contain
+secrets. Session logs contain safe phase/status/cause metadata, not tokens, OAuth
+URLs, provider keys, config bodies or raw child output. Retention is 20 sessions /
+seven days, capped at 256 KiB per session; unsafe/unwritable log storage is best
+effort and does not prevent authentication.
+
 ## Contents
 
 - [Install](#install)
@@ -247,7 +266,7 @@ Optional strict mode is `PROVOD_VERIFY_SIGNATURE=1 provod update --yes`. It requ
 
 ## Uninstall
 
-Use `provod uninstall --yes` to revoke its target-local grants and restore receipt-owned configuration. Repeat `--environment` to explicitly select other environments. This retains the executable and versioned helper runtime. Remove the executable manually only after cleanup:
+Use `provod uninstall --yes` to restore receipt-owned local configuration and forget configured CLI auth. Remote grants, installations and API keys are unchanged; manage unwanted credentials in the web interface. Repeat `--environment` to explicitly select other environments. This retains the executable and versioned helper runtime. Remove the executable manually only after cleanup:
 
 ```bash
 rm ~/.local/bin/provod
@@ -279,7 +298,7 @@ The CLI fails closed when another operation may still own its state lock. First 
 
 ### Legacy keyring installation
 
-A session stored only by an older CLI in the OS keyring cannot be migrated automatically. Use that older CLI to clean up or revoke the installation, then run `provod setup` again to authenticate into the private-file credential store.
+A session stored only by an older CLI in the OS keyring cannot be migrated automatically. Run `provod setup` again to authenticate into private-file storage; manage unwanted old remote credentials in the web interface. Revocation is not a fresh-login prerequisite.
 
 ## Support
 
