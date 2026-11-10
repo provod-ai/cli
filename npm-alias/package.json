@@ -1,6 +1,6 @@
 {
   "name": "provod",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Short npx launcher for the Provod CLI",
   "license": "MIT",
   "homepage": "https://provod.ai",
@@ -19,7 +19,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@provod-ai/cli": "0.2.0"
+    "@provod-ai/cli": "0.2.1"
   },
   "engines": {
     "node": ">=18.18.0"
