@@ -108,14 +108,15 @@ jobs:
               --certificate-oidc-issuer https://token.actions.githubusercontent.com "$archive"
           done
           printf 'tag=%s\nversion=%s\n' "$TAG" "$VERSION" >> "$GITHUB_OUTPUT"
-      - name: Test and pack the public wrapper
+      - name: Pack the pretested public wrapper
         id: pack
         shell: bash
         env:
           VERSION: ${{ steps.identity.outputs.version }}
         run: |
           set -euo pipefail
-          npm --prefix npm test
+          # All behavioral/package tests run in the private self-hosted full-main CI.
+          # This hosted step only packs immutable public-tag inputs; never run tests here.
           mkdir "$RUNNER_TEMP/npm-package"
           TARBALL="$(cd npm && npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/npm-package")"
           test "$TARBALL" = "provod-ai-cli-${VERSION}.tgz"

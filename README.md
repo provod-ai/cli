@@ -1,5 +1,7 @@
 # Provod CLI
 
+> Junie support was removed in v0.2.5. No new setup, discovery, install or launch is offered. Existing configuration is untouched; legacy receipt cleanup remains available via `provod harness reset junie`, root `provod rollback`, or receipt-owned `provod uninstall --yes`. Historical Junie evidence below is not current support.
+
 [![release](https://img.shields.io/github/v/release/provod-ai/cli?style=flat-square)](https://github.com/provod-ai/cli/releases)
 [![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-111111?style=flat-square)](#supported-platforms)
 [![license](https://img.shields.io/github/license/provod-ai/cli?style=flat-square)](./LICENSE)
@@ -158,7 +160,7 @@ provod mcp
 
 ## Supported agents
 
-The local adapter catalog contains these 21 clients; the live integrity-checked manifest decides which are available. This is not a claim that every adapter has been executed on Windows:
+The local adapter catalog contains these 20 supported clients; the live integrity-checked manifest decides which are available. Junie was removed in v0.2.5; existing user configuration is untouched and only legacy receipt cleanup remains. This is not a claim that every adapter has been executed on Windows:
 
 - Hermes Agent
 - Claude Code
@@ -172,7 +174,6 @@ The local adapter catalog contains these 21 clients; the live integrity-checked 
 - ForgeCode
 - Goose
 - Grok Build
-- Junie CLI
 - Cline
 - GitHub Copilot CLI
 - Deep Agents Code
